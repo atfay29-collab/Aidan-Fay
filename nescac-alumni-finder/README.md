@@ -286,8 +286,9 @@ loses results.
 - PDL progress is saved per school, so a later run only pays for profiles
   beyond the ones it already has. That holds after a crash, after raising
   `--max-per-school`, and after running out of credits and resuming next month.
-- When credits are nearly gone, the last request asks for exactly the number
-  left, so no leftover credits are wasted.
+- If PDL refuses a full page because credits are low, the tool retries once
+  with the number PDL says is left. An expired resume token falls back to
+  resuming by position, so nothing already bought is paid for again.
 - Only the fields the tool uses are cached. Personal emails and phone numbers
   are dropped.
 - `--refresh-cache` forces fresh data.

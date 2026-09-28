@@ -266,25 +266,27 @@ def test_parse_person_fills_division_and_group_from_title_or_headline():
     assert (person.division, person.group) == ("Investment Banking", "Leveraged Finance")
 
 
-def test_last_page_is_sized_to_the_credits_left():
-    first = FakeResponse(200, {"data": people(10), "total": 264, "scroll_token": "t1"}, {"x-totallimit-remaining": "7"})
-    last = FakeResponse(200, {"data": people(7, "q"), "total": 264, "scroll_token": "t2"}, {"x-totallimit-remaining": "0"})
-    source, session = make_source([first, last])
-    found = []
-    with pytest.raises(QuotaExceeded):
-        for person in source.search(COLBY, BANKS, max_records=100):
-            found.append(person)
-    assert session.calls[1]["json"]["size"] == 7
-    assert len(found) == 17  # everything paid for is kept before stopping
+def test_remaining_header_does_not_stop_a_run_up_front():
+    # PDL once reported 29 left while search was exhausted, so the header only
+    # guides a retry after a 402; it never blocks a request by itself.
+    first = FakeResponse(200, {"data": people(10), "total": 30, "scroll_token": "t1"}, {"x-totallimit-remaining": "0"})
+    second = FakeResponse(200, {"data": people(20, "q"), "total": 30}, {"x-totallimit-remaining": "0"})
+    source, session = make_source([first, second])
+    assert len(list(source.search(COLBY, BANKS))) == 30
+    assert [c["json"]["size"] for c in session.calls] == [PAGE_SIZE, PAGE_SIZE]
 
 
 def test_402_on_a_full_page_retries_with_the_credits_left():
     short = FakeResponse(402, {"error": {"message": "out of credits"}}, {"x-totallimit-remaining": "12"})
     ok = FakeResponse(200, {"data": people(12), "total": 264, "scroll_token": "t1"}, {"x-totallimit-remaining": "0"})
-    source, session = make_source([short, ok])
+    out = FakeResponse(402, {"error": {"message": "out of credits"}}, {"x-totallimit-remaining": "0"})
+    source, session = make_source([short, ok, out])
+    found = []
     with pytest.raises(QuotaExceeded):
-        list(source.search(COLBY, BANKS))
-    assert [c["json"]["size"] for c in session.calls] == [PAGE_SIZE, 12]
+        for person in source.search(COLBY, BANKS):
+            found.append(person)
+    assert [c["json"]["size"] for c in session.calls] == [PAGE_SIZE, 12, PAGE_SIZE]
+    assert len(found) == 12  # what was bought is kept
 
 
 def test_progress_outlives_the_normal_cache_ttl(tmp_path, monkeypatch):
@@ -299,3 +301,25 @@ def test_progress_outlives_the_normal_cache_ttl(tmp_path, monkeypatch):
     later, session = make_source([], cache=cache)
     assert len(list(later.search(COLBY, BANKS, max_records=10))) == 10
     assert session.calls == []
+
+
+def test_expired_token_that_returns_an_empty_page_resumes_by_offset(tmp_path):
+    cache = Cache(tmp_path / "c.sqlite3", ttl_seconds=3600)
+    source, _ = make_source([FakeResponse(200, {"data": people(60), "total": 264, "scroll_token": "old"})], cache=cache)
+    list(source.search(COLBY, BANKS, max_records=60))
+
+    empty = FakeResponse(404, {"status": 404, "error": {"message": "No records were found"}})
+    rest = FakeResponse(200, {"data": people(50, "n"), "total": 264, "scroll_token": "new"})
+    later, session = make_source([empty, rest], cache=cache)
+    found = list(later.search(COLBY, BANKS, max_records=110))
+    assert len(found) == 110
+    assert session.calls[0]["json"]["scroll_token"] == "old"
+    assert session.calls[1]["json"]["from"] == 60 and "scroll_token" not in session.calls[1]["json"]
+
+
+def test_genuine_end_of_results_is_not_retried(tmp_path):
+    cache = Cache(tmp_path / "c.sqlite3", ttl_seconds=3600)
+    source, _ = make_source([FakeResponse(200, {"data": people(30), "total": 30, "scroll_token": "t1"})], cache=cache)
+    list(source.search(COLBY, BANKS))
+    again, session = make_source([], cache=cache)  # done: no requests at all
+    assert len(list(again.search(COLBY, BANKS))) == 30 and session.calls == []

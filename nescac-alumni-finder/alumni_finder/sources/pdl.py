@@ -292,32 +292,37 @@ class PDLSource:
 
     def _fetch_more(self, query: dict, size: int, state: dict) -> dict:
         offset = len(state["records"])
-        if state["scroll_token"]:
-            body = _request_body(query, size, state["scroll_token"])
-        else:
-            body = _request_body(query, size)
-            if offset:
-                body["from"] = offset
+        token = state["scroll_token"]
+        if token:
+            try:
+                page = self._post_sized(_request_body(query, size, token))
+            except (AuthError, QuotaExceeded):
+                raise
+            except ApiError as exc:
+                if exc.status != 400:
+                    raise
+                page = None  # PDL rejected the token
+            short_of_total = state["total"] is not None and offset < state["total"]
+            if page is not None and (page["data"] or not short_of_total):
+                return page
+            # Scroll tokens expire (PDL may reject them or just return nothing).
+            # Resume by position instead of re-buying the records already cached.
+            log.warning("PDL scroll token expired; resuming at record %d by offset", offset)
+        body = _request_body(query, size)
+        if offset:
+            body["from"] = offset
+        return self._post_sized(body)
+
+    def _post_sized(self, body: dict) -> dict:
+        """POST; if PDL refuses a full page for lack of credits, retry once with what it says is left."""
         try:
             return self._post(body)
         except QuotaExceeded as exc:
-            # Out of credits for a full page: spend exactly what's left instead.
             left = self._credits_left()
-            if exc.status != 402 or not left or left >= size:
+            if exc.status != 402 or not left or left >= body["size"]:
                 raise
-            log.info("PDL: %d credit(s) left; fetching that many", left)
+            log.info("PDL reports %d credit(s) left; trying a request that size", left)
             return self._post({**body, "size": left})
-        except AuthError:
-            raise
-        except ApiError as exc:
-            if not state["scroll_token"] or exc.status != 400:
-                raise
-            # Scroll tokens expire. Resume by offset rather than re-buying
-            # the records already in the cache.
-            log.warning("PDL scroll token expired; resuming at record %d by offset", offset)
-            body = _request_body(query, size)
-            body["from"] = offset
-            return self._post(body)
 
     def _credits_left(self) -> int | None:
         value = self.credits_remaining
@@ -364,12 +369,9 @@ class PDLSource:
                 yield person
 
         while used < cap and not state["done"]:
+            # PDL's "remaining" header doesn't track search credits reliably,
+            # so don't stop on it up front; PDL answers 402 when truly out.
             size = int(min(PAGE_SIZE, cap - used))
-            left = self._credits_left()
-            if left is not None:
-                if left <= 0:
-                    raise QuotaExceeded("PDL: no search credits left", 402)
-                size = min(size, left)
             page = self._fetch_more(query, size, state)
             records = page["data"]
             if state["total"] is None:
