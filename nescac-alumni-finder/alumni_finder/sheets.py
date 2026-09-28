@@ -22,7 +22,7 @@ from gspread.utils import ValueInputOption, rowcol_to_a1
 from .config import Bank, School
 from .linkedin_links import SearchLink
 from .models import Person
-from .table import BANK, COLUMNS, EMAIL, HIDDEN_COLUMNS, NAME, SCHOOL, build_rows, row_to_person
+from .table import BANK, COLUMNS, EMAIL, GROUP, NAME, SCHOOL, VISIBLE_COLUMNS, build_rows, row_to_person
 
 log = logging.getLogger(__name__)
 
@@ -235,22 +235,20 @@ class SheetWriter:
         requests.append({"setBasicFilter": {"filter": {"range": full_range}}})
 
         school_idx, bank_idx, name_idx = headers.index(SCHOOL), headers.index(BANK), headers.index(NAME)
+        group_idx = headers.index(GROUP)
         for school in sorted({p.primary_school for p in people if p.primary_school}):
-            requests.append(_filter_view(f"{SCHOOL_VIEW_PREFIX}{school}", full_range, school_idx, school, [bank_idx, name_idx]))
-        for bank in sorted({p.bank for p in people if p.bank}):
-            requests.append(_filter_view(f"{BANK_VIEW_PREFIX}{bank}", full_range, bank_idx, bank, [school_idx, name_idx]))
-
-        for hidden in HIDDEN_COLUMNS:
-            idx = headers.index(hidden)
             requests.append(
-                {
-                    "updateDimensionProperties": {
-                        "range": {"sheetId": master.id, "dimension": "COLUMNS", "startIndex": idx, "endIndex": idx + 1},
-                        "properties": {"hiddenByUser": True},
-                        "fields": "hiddenByUser",
-                    }
-                }
+                _filter_view(f"{SCHOOL_VIEW_PREFIX}{school}", full_range, school_idx, school, [bank_idx, group_idx, name_idx])
             )
+        for bank in sorted({p.bank for p in people if p.bank}):
+            requests.append(_filter_view(f"{BANK_VIEW_PREFIX}{bank}", full_range, bank_idx, bank, [group_idx, name_idx]))
+
+        # Show the chosen columns (and any you added); hide the bookkeeping ones.
+        # Unhide everything first so a column that moved doesn't stay hidden.
+        requests.append(_column_visibility(master.id, 0, len(headers), hidden=False))
+        for idx, header in enumerate(headers):
+            if header in COLUMNS and header not in VISIBLE_COLUMNS:
+                requests.append(_column_visibility(master.id, idx, idx + 1, hidden=True))
         for ws, cols in tabs:
             requests.append(
                 {
@@ -273,6 +271,16 @@ class SheetWriter:
 
 def _column_letter(index: int) -> str:
     return rowcol_to_a1(1, index + 1).rstrip("1")
+
+
+def _column_visibility(sheet_id: int, start: int, end: int, hidden: bool) -> dict:
+    return {
+        "updateDimensionProperties": {
+            "range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": start, "endIndex": end},
+            "properties": {"hiddenByUser": hidden},
+            "fields": "hiddenByUser",
+        }
+    }
 
 
 def _freeze_header(sheet_id: int) -> dict:

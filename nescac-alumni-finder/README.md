@@ -91,9 +91,18 @@ span tabs. A single table with both dimensions as columns groups either way
 without duplicating data. The sort order still reads "school, then bank within
 school" top to bottom.
 
-Columns: `School, Bank, Bank Type, Full Name, Title, Division, Group, Email,
-Email Source, Email Confidence, LinkedIn URL, Location, Grad Year, Also Attended,
-Found Via, Last Seen, Status, Notes` (plus a hidden `Source ID`).
+**Visible columns:** `Full Name, Bank, Group, Title, Email`. Rows are sorted
+by bank, then group, then name.
+
+Everything else is kept in **hidden** columns:
+- School, Bank Type, Division, Email Source, Email Confidence, LinkedIn URL,
+  Location, Grad Year, Also Attended, Found Via, Last Seen, Status, Notes,
+  Source ID.
+
+The tool needs them on re-runs: the LinkedIn URL and Source ID catch
+duplicates, and Email Source keeps an email you typed from being replaced. To
+see them, select the columns around the hidden ones and choose *Unhide
+columns*. Any column you add yourself stays visible.
 
 **Division and Group.** No data source has a "group" field, so the tool reads
 the job title, and the LinkedIn headline when PDL has one.

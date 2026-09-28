@@ -38,9 +38,15 @@ TOOL_COLUMNS = [
 # Columns for your own tracking. The tool never overwrites them, and any
 # extra column you add to the sheet is carried along the same way.
 USER_COLUMNS = [STATUS, NOTES]
-HIDDEN_COLUMNS = [SOURCE_ID]
-COLUMNS = TOOL_COLUMNS + USER_COLUMNS + HIDDEN_COLUMNS
-
+INTERNAL_COLUMNS = [SOURCE_ID]
+# What the sheet shows, in this order. Every other column is kept but hidden:
+# the tool uses them on re-runs (LinkedIn URL and Source ID to spot
+# duplicates, Email Source so a typed-in email is never replaced), and you
+# can unhide them in Sheets at any time.
+VISIBLE_COLUMNS = [NAME, BANK, GROUP, TITLE, EMAIL]
+COLUMNS = VISIBLE_COLUMNS + [
+    c for c in TOOL_COLUMNS + USER_COLUMNS + INTERNAL_COLUMNS if c not in VISIBLE_COLUMNS
+]
 
 
 def headers_with_extras(extra_headers: Sequence[str] = ()) -> list[str]:
@@ -127,15 +133,16 @@ def row_to_person(headers: Sequence[str], row: Sequence[str]) -> Person | None:
     else:
         person.email_note = source_label
         person.email_opted_out = source_label == NOTE_OPTED_OUT
-    person.user_fields = {h: v for h, v in cells.items() if h not in TOOL_COLUMNS and h not in HIDDEN_COLUMNS}
+    person.user_fields = {h: v for h, v in cells.items() if h not in TOOL_COLUMNS and h not in INTERNAL_COLUMNS}
     return person
 
 
 def sort_key(person: Person) -> tuple:
-    """School A-Z, then bank A-Z, then last name, so rows read grouped by school then bank."""
+    """School, then bank, then group (blank groups last), then last name."""
     return (
         person.primary_school.lower() or "~",
         person.bank.lower(),
+        person.group.lower() or "~",
         person.last_name.lower(),
         person.first_name.lower(),
     )

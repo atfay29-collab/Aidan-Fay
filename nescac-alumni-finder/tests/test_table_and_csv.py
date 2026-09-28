@@ -9,20 +9,24 @@ def make(name, school, bank, **kw):
     return Person(full_name=name, first_name=first, last_name=last, bank=bank, schools=[school], **kw)
 
 
-def test_rows_are_grouped_by_school_then_bank_then_last_name():
+def test_rows_are_grouped_by_school_then_bank_then_group_then_last_name():
     people = [
         make("Zed Adams", "Colby", "Lazard"),
         make("Amy Young", "Bates", "Evercore"),
-        make("Bob Brown", "Colby", "Evercore"),
+        make("Bob Brown", "Colby", "Evercore", group="M&A"),
         make("Al Able", "Colby", "Evercore"),
+        make("Cy Cole", "Colby", "Evercore", group="Healthcare"),
     ]
     rows = build_rows(people)
-    assert rows[0] == COLUMNS
-    assert [(r[0], r[1], r[3]) for r in rows[1:]] == [
-        ("Bates", "Evercore", "Amy Young"),
-        ("Colby", "Evercore", "Al Able"),
-        ("Colby", "Evercore", "Bob Brown"),
-        ("Colby", "Lazard", "Zed Adams"),
+    header = rows[0]
+    assert header == COLUMNS
+    cols = [header.index(c) for c in ("School", "Bank", "Group", "Full Name")]
+    assert [tuple(r[i] for i in cols) for r in rows[1:]] == [
+        ("Bates", "Evercore", "", "Amy Young"),
+        ("Colby", "Evercore", "Healthcare", "Cy Cole"),
+        ("Colby", "Evercore", "M&A", "Bob Brown"),
+        ("Colby", "Evercore", "", "Al Able"),  # blank group sorts last within the bank
+        ("Colby", "Lazard", "", "Zed Adams"),
     ]
 
 
