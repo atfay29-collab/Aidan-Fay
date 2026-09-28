@@ -145,3 +145,17 @@ def test_rerun_against_the_sheet_keeps_user_edits_and_adds_new_people(env, monke
     # The address you typed outranks the one PDL now returns.
     assert (jane["Email"], jane["Email Source"]) == ("jane@gs.com", "Manual")
     assert rows["Sam Lee"]["Email"] == "sam.lee@gs.com"
+
+
+def test_group_column_is_filled_from_titles_including_manual_rows(env):
+    manual = env / "manual.csv"
+    manual.write_text(
+        "school,bank,full_name,title,group\n"
+        "Colby,Goldman Sachs,Jane Doe,Investment Banking Analyst - Healthcare,\n"
+        "Colby,Evercore,Sam Lee,Associate,Restructuring\n"
+    )
+    assert cli.main(["run", "--no-sheet", "--no-pdl", "--no-hunter", "--manual-csv", str(manual), "--output-csv", "out.csv"]) == 0
+    rows = {r["Full Name"]: r for r in read_csv(env / "out.csv")}
+    assert (rows["Jane Doe"]["Division"], rows["Jane Doe"]["Group"]) == ("Investment Banking", "Healthcare")
+    # A group you supply wins; division is still inferred (boutique + banker title).
+    assert (rows["Sam Lee"]["Division"], rows["Sam Lee"]["Group"]) == ("Investment Banking", "Restructuring")

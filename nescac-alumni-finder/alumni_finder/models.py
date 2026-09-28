@@ -40,6 +40,8 @@ class Person:
     bank: str  # Bank.name, or whatever an existing sheet row says
     schools: list[str]  # School.name values, primary school first
     title: str = ""
+    division: str = ""  # e.g. "Investment Banking"; see groups.py
+    group: str = ""  # e.g. "Healthcare, M&A"
     linkedin_url: str = ""
     location: str = ""
     grad_year: str = ""

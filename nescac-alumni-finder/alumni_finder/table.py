@@ -28,10 +28,11 @@ LINKEDIN, LOCATION, GRAD_YEAR, ALSO_ATTENDED, FOUND_VIA, LAST_SEEN = (
     "Last Seen",
 )
 STATUS, NOTES, SOURCE_ID = "Status", "Notes", "Source ID"
+DIVISION, GROUP = "Division", "Group"
 
 # Columns the tool fills in. On every run they are rewritten from fresh data.
 TOOL_COLUMNS = [
-    SCHOOL, BANK, BANK_TYPE, NAME, TITLE, EMAIL, EMAIL_SOURCE, EMAIL_CONFIDENCE,
+    SCHOOL, BANK, BANK_TYPE, NAME, TITLE, DIVISION, GROUP, EMAIL, EMAIL_SOURCE, EMAIL_CONFIDENCE,
     LINKEDIN, LOCATION, GRAD_YEAR, ALSO_ATTENDED, FOUND_VIA, LAST_SEEN,
 ]
 # Columns for your own tracking. The tool never overwrites them, and any
@@ -59,6 +60,8 @@ def person_to_row(person: Person, headers: Sequence[str]) -> list[str]:
         BANK_TYPE: bank.category if bank else "",
         NAME: person.full_name,
         TITLE: person.title,
+        DIVISION: person.division,
+        GROUP: person.group,
         EMAIL: person.email,
         EMAIL_SOURCE: email_source,
         EMAIL_CONFIDENCE: person.email_confidence if person.email else "",
@@ -106,6 +109,8 @@ def row_to_person(headers: Sequence[str], row: Sequence[str]) -> Person | None:
         bank=_canonical_bank(cells.get(BANK, "")),
         schools=[s for s in schools if s],
         title=cells.get(TITLE, ""),
+        division=cells.get(DIVISION, ""),
+        group=cells.get(GROUP, ""),
         linkedin_url=cells.get(LINKEDIN, ""),
         location=cells.get(LOCATION, ""),
         grad_year=cells.get(GRAD_YEAR, ""),

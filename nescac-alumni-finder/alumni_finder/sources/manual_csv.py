@@ -6,8 +6,8 @@ CSV. This module validates the rows and hands them to the same
 de-duplication and email-enrichment pipeline as the API results.
 
 Columns (header names are case-insensitive; only school, bank and a name are required):
-    school, bank, full_name (or first_name + last_name), title, linkedin_url,
-    email, location, grad_year
+    school, bank, full_name (or first_name + last_name), title, group,
+    division, linkedin_url, email, location, grad_year
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from ..normalize import is_valid_email, split_name
 
 log = logging.getLogger(__name__)
 
-TEMPLATE_HEADERS = ["school", "bank", "full_name", "title", "linkedin_url", "email", "location", "grad_year"]
+TEMPLATE_HEADERS = ["school", "bank", "full_name", "title", "group", "linkedin_url", "email", "location", "grad_year"]
 
 _HEADER_ALIASES = {
     "name": "full_name",
@@ -81,6 +81,8 @@ def load_manual_csv(path: str | Path) -> tuple[list[Person], list[str]]:
                 bank=bank.name,
                 schools=[school.name],
                 title=row.get("title", ""),
+                division=row.get("division", ""),
+                group=row.get("group", ""),
                 linkedin_url=row.get("linkedin_url", ""),
                 location=row.get("location", ""),
                 grad_year=row.get("grad_year", ""),

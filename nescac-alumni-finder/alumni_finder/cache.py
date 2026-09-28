@@ -40,14 +40,16 @@ class Cache:
     def _key(key: Any) -> str:
         return hashlib.sha256(json.dumps(key, sort_keys=True, default=str).encode()).hexdigest()
 
-    def get(self, namespace: str, key: Any) -> Any | None:
+    def get(self, namespace: str, key: Any, ttl_seconds: float | None = None) -> Any | None:
+        """Stored value, or None if missing or older than ttl_seconds (default: the cache's TTL)."""
         if not self._conn or self.refresh:
             return None
         row = self._conn.execute(
             "SELECT value, created FROM cache WHERE namespace = ? AND key = ?",
             (namespace, self._key(key)),
         ).fetchone()
-        if row is None or time.time() - row[1] > self.ttl_seconds:
+        ttl = self.ttl_seconds if ttl_seconds is None else ttl_seconds
+        if row is None or time.time() - row[1] > ttl:
             return None
         self.hits += 1
         return json.loads(row[0])

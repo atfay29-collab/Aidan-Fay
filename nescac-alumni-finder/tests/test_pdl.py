@@ -257,3 +257,45 @@ def test_count_is_free_after_a_search(tmp_path):
     list(source.search(COLBY, BANKS, max_records=10))
     again, session = make_source([], cache=cache)
     assert again.count(COLBY, BANKS) == 264 and session.calls == []
+
+
+def test_parse_person_fills_division_and_group_from_title_or_headline():
+    person = parse_person(pdl_record(job_title="Investment Banking Analyst - Healthcare"))
+    assert (person.division, person.group) == ("Investment Banking", "Healthcare")
+    person = parse_person(pdl_record(job_title="Analyst", headline="Leveraged Finance at Goldman Sachs"))
+    assert (person.division, person.group) == ("Investment Banking", "Leveraged Finance")
+
+
+def test_last_page_is_sized_to_the_credits_left():
+    first = FakeResponse(200, {"data": people(10), "total": 264, "scroll_token": "t1"}, {"x-totallimit-remaining": "7"})
+    last = FakeResponse(200, {"data": people(7, "q"), "total": 264, "scroll_token": "t2"}, {"x-totallimit-remaining": "0"})
+    source, session = make_source([first, last])
+    found = []
+    with pytest.raises(QuotaExceeded):
+        for person in source.search(COLBY, BANKS, max_records=100):
+            found.append(person)
+    assert session.calls[1]["json"]["size"] == 7
+    assert len(found) == 17  # everything paid for is kept before stopping
+
+
+def test_402_on_a_full_page_retries_with_the_credits_left():
+    short = FakeResponse(402, {"error": {"message": "out of credits"}}, {"x-totallimit-remaining": "12"})
+    ok = FakeResponse(200, {"data": people(12), "total": 264, "scroll_token": "t1"}, {"x-totallimit-remaining": "0"})
+    source, session = make_source([short, ok])
+    with pytest.raises(QuotaExceeded):
+        list(source.search(COLBY, BANKS))
+    assert [c["json"]["size"] for c in session.calls] == [PAGE_SIZE, 12]
+
+
+def test_progress_outlives_the_normal_cache_ttl(tmp_path, monkeypatch):
+    import alumni_finder.cache as cache_module
+
+    cache = Cache(tmp_path / "c.sqlite3", ttl_seconds=30 * 86400)
+    source, _ = make_source([FakeResponse(200, {"data": people(10), "total": 264, "scroll_token": "t1"})], cache=cache)
+    list(source.search(COLBY, BANKS, max_records=10))
+
+    real_time = cache_module.time.time
+    monkeypatch.setattr(cache_module.time, "time", lambda: real_time() + 45 * 86400)  # next month
+    later, session = make_source([], cache=cache)
+    assert len(list(later.search(COLBY, BANKS, max_records=10))) == 10
+    assert session.calls == []

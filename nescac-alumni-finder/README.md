@@ -91,9 +91,22 @@ span tabs. A single table with both dimensions as columns groups either way
 without duplicating data. The sort order still reads "school, then bank within
 school" top to bottom.
 
-Columns: `School, Bank, Bank Type, Full Name, Title, Email, Email Source,
-Email Confidence, LinkedIn URL, Location, Grad Year, Also Attended, Found Via,
-Last Seen, Status, Notes` (plus a hidden `Source ID`).
+Columns: `School, Bank, Bank Type, Full Name, Title, Division, Group, Email,
+Email Source, Email Confidence, LinkedIn URL, Location, Grad Year, Also Attended,
+Found Via, Last Seen, Status, Notes` (plus a hidden `Source ID`).
+
+**Division and Group.** No data source has a "group" field, so the tool reads
+the job title, and the LinkedIn headline when PDL has one.
+- "Investment Banking Analyst – Healthcare" becomes Division *Investment
+  Banking*, Group *Healthcare*.
+- "VP, TMT M&A" becomes Group *TMT, M&A*.
+- "Fixed Income Sales" becomes Division *Sales & Trading*, Group *Fixed Income*.
+- A title that's just "Analyst" stays blank. Check the person's LinkedIn
+  profile and type the group in yourself.
+
+Once a Division or Group cell has a value, whether the tool filled it or you
+did, the tool never changes it. To catch more spellings, edit the keyword
+tables in `alumni_finder/groups.py`.
 
 **Re-runs are safe.** `Status`, `Notes` and any columns you add are never
 overwritten. An email you type in yourself counts as "Manual" and always
@@ -219,7 +232,7 @@ python -m alumni_finder links     # writes output/linkedin_search_links.csv + a 
 
 Open the links **yourself** in a browser where you're logged in to LinkedIn.
 Add the people you find to `output/manual_alumni_template.csv` (columns:
-`school, bank, full_name, title, linkedin_url, email, location, grad_year`;
+`school, bank, full_name, title, group, linkedin_url, email, location, grad_year`;
 only the first three are required). Then:
 
 ```bash
@@ -257,10 +270,15 @@ loses results.
 - The run summary lists every failure. The exit code is 2 when anything failed.
 
 **Caching.**
-- Every PDL page and Hunter lookup is stored in `.cache/alumni_finder.sqlite3`
-  for 30 days, keyed by the exact request.
-- If a run crashes halfway, rerunning replays the pages you already paid for,
-  and raising `--max-per-school` later reuses the pages already bought.
+- Every PDL profile and Hunter lookup is stored in
+  `.cache/alumni_finder.sqlite3`.
+- PDL profiles are kept for at least 6 months. Hunter results are kept for
+  `CACHE_TTL_DAYS`.
+- PDL progress is saved per school, so a later run only pays for profiles
+  beyond the ones it already has. That holds after a crash, after raising
+  `--max-per-school`, and after running out of credits and resuming next month.
+- When credits are nearly gone, the last request asks for exactly the number
+  left, so no leftover credits are wasted.
 - Only the fields the tool uses are cached. Personal emails and phone numbers
   are dropped.
 - `--refresh-cache` forces fresh data.

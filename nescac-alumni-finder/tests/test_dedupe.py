@@ -79,3 +79,14 @@ def test_bank_change_moves_the_person():
     assert len(d.people) == 1 and d.people[0].bank == "Evercore"
     d.add(person(bank="Evercore"))  # name + new bank now finds her
     assert len(d.people) == 1
+
+
+def test_group_typed_by_the_user_is_never_replaced():
+    d = Deduper()
+    d.add(person(group="Healthcare", division="Investment Banking"))
+    d.add(person(group="TMT", division="Investment Banking"))
+    assert d.people[0].group == "Healthcare"
+    d2 = Deduper()
+    d2.add(person())
+    d2.add(person(group="TMT", division="Investment Banking"))
+    assert (d2.people[0].division, d2.people[0].group) == ("Investment Banking", "TMT")

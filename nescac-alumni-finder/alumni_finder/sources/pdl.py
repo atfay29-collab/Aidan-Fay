@@ -17,6 +17,7 @@ import requests
 
 from ..cache import Cache
 from ..config import BANKS, SCHOOLS, Bank, School, match_school_entry, resolve_bank
+from ..groups import classify
 from ..http import ApiError, AuthError, QuotaExceeded, RateLimiter, error_message, request_with_retries
 from ..models import NOTE_PDL_MASKED, Person
 from ..normalize import is_valid_email, normalize_domain
@@ -28,6 +29,9 @@ PDL_SEARCH_URL = "https://api.peopledatalabs.com/v5/person/search"
 # with a bigger --max-per-school replays the pages already bought from the
 # cache instead of re-requesting them at a different size and paying again.
 PAGE_SIZE = 50
+# Records already bought are kept at least this long, so a search that runs
+# out of free credits can resume next month without re-buying them.
+PROGRESS_TTL_SECONDS = 180 * 86400
 
 
 def build_query(school: School, banks: Sequence[Bank]) -> dict:
@@ -68,6 +72,7 @@ def _request_body(query: dict, size: int, scroll_token: str | None = None) -> di
 _KEPT_FIELDS = (
     "id", "full_name", "first_name", "last_name", "job_title", "job_company_name",
     "job_company_website", "linkedin_url", "location_name", "work_email", "emails",
+    "headline", "job_summary",
 )
 
 
@@ -177,6 +182,12 @@ def parse_person(
         pdl_id=_text(record.get("id")),
         sources={"pdl"},
     )
+    person.division, person.group = classify(
+        person.title,
+        _text(record.get("headline")),
+        _text(record.get("job_summary")),
+        bank_category=bank.category,
+    )
     email, masked = _work_email(record, bank)
     if email:
         person.set_email(email, "pdl", "on file")
@@ -252,7 +263,8 @@ class PDLSource:
     # whatever --max-per-school was before.
 
     def _load_progress(self, query: dict) -> dict:
-        state = self.cache.get("pdl_progress", query)
+        ttl = max(self.cache.ttl_seconds, PROGRESS_TTL_SECONDS)
+        state = self.cache.get("pdl_progress", query, ttl_seconds=ttl)
         if state is None:
             state = self._progress_from_old_cache(query) or {
                 "total": None,
@@ -288,7 +300,14 @@ class PDLSource:
                 body["from"] = offset
         try:
             return self._post(body)
-        except (AuthError, QuotaExceeded):
+        except QuotaExceeded as exc:
+            # Out of credits for a full page: spend exactly what's left instead.
+            left = self._credits_left()
+            if exc.status != 402 or not left or left >= size:
+                raise
+            log.info("PDL: %d credit(s) left; fetching that many", left)
+            return self._post({**body, "size": left})
+        except AuthError:
             raise
         except ApiError as exc:
             if not state["scroll_token"] or exc.status != 400:
@@ -299,6 +318,10 @@ class PDLSource:
             body = _request_body(query, size)
             body["from"] = offset
             return self._post(body)
+
+    def _credits_left(self) -> int | None:
+        value = self.credits_remaining
+        return int(value) if value and value.isdigit() else None
 
     def count(self, school: School, banks: Sequence[Bank]) -> int:
         """Total matches for one school. Free if this school was searched before, else at most one credit."""
@@ -342,6 +365,11 @@ class PDLSource:
 
         while used < cap and not state["done"]:
             size = int(min(PAGE_SIZE, cap - used))
+            left = self._credits_left()
+            if left is not None:
+                if left <= 0:
+                    raise QuotaExceeded("PDL: no search credits left", 402)
+                size = min(size, left)
             page = self._fetch_more(query, size, state)
             records = page["data"]
             if state["total"] is None:

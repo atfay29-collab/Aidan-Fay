@@ -14,9 +14,10 @@ from datetime import date, datetime
 from pathlib import Path
 
 from .cache import Cache
-from .config import BANKS, SCHOOLS, Settings, resolve_bank, resolve_school, select
+from .config import BANKS, BANKS_BY_NAME, SCHOOLS, Settings, resolve_bank, resolve_school, select
 from .dedupe import Deduper
 from .enrich import EmailEnricher, HunterClient
+from .groups import classify
 from .http import ApiError, AuthError, QuotaExceeded, RateLimiter
 from .linkedin_links import build_links
 from .models import EMAIL_SOURCE_LABELS, Person
@@ -133,6 +134,17 @@ def _title_filter(people: list[Person], keywords: list[str] | None, report: RunR
     return kept
 
 
+def _fill_groups(people: list[Person]) -> None:
+    """Infer Division/Group from the title wherever they're still blank."""
+    for person in people:
+        if person.division and person.group:
+            continue
+        bank = BANKS_BY_NAME.get(person.bank)
+        division, group = classify(person.title, bank_category=bank.category if bank else "")
+        person.division = person.division or division
+        person.group = person.group or group
+
+
 def cmd_run(args, settings: Settings) -> int:
     schools, banks = _scope(args)
     report = RunReport()
@@ -184,6 +196,7 @@ def cmd_run(args, settings: Settings) -> int:
     everyone.add_all(this_run.people)
     report.new_people = len(everyone.people) - before
     report.total_people = len(everyone.people)
+    _fill_groups(everyone.people)
 
     hunter = None
     if settings.hunter_api_key and not args.no_hunter:

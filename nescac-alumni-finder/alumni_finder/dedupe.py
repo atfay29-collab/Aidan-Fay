@@ -31,6 +31,11 @@ def merge(old: Person, new: Person) -> Person:
         value = getattr(new, name)
         if value:
             setattr(old, name, value)
+    # Division/Group are filled once and then left alone, so a group you
+    # typed in (or corrected) is never replaced by the tool's guess.
+    for name in ("division", "group"):
+        if not getattr(old, name) and getattr(new, name):
+            setattr(old, name, getattr(new, name))
     for school in new.schools:
         if school not in old.schools:
             old.schools.append(school)

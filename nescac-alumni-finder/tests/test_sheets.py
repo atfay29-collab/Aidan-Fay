@@ -58,7 +58,7 @@ def test_summary_counts_school_by_bank_with_live_formulas():
     assert amherst[0] == "Amherst"
     assert amherst[1] == "=COUNTIFS('Alumni'!$A:$A,$A2,'Alumni'!$B:$B,B$1)"
     assert amherst[-2] == "=SUM(B2:P2)"  # 15 bank columns: B..P
-    assert amherst[-1] == "=COUNTIFS('Alumni'!$A:$A,$A2,'Alumni'!$F:$F,\"<>\")"
+    assert amherst[-1] == "=COUNTIFS('Alumni'!$A:$A,$A2,'Alumni'!$H:$H,\"<>\")"  # Email is column H
     assert summary.values[len(SCHOOLS) + 1][1] == "=SUM(B2:B12)"
 
 
