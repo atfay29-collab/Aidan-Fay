@@ -4,9 +4,9 @@ Runs one Elasticsearch query per school:
 
     (attended <school>) AND (current employer is one of the target banks)
 
-Results are paged with PDL's scroll token. Each page costs one credit per
-record returned, so every page is cached (see cache.py) and replayed on later
-runs instead of being bought again.
+Results are paged with PDL's scroll token. Each record returned costs one
+credit, so every record bought is cached (see cache.py) and replayed on later
+runs; a run only pays for records past the ones it already has.
 """
 from __future__ import annotations
 
@@ -205,10 +205,8 @@ class PDLSource:
         self.credits_spent = 0
         self.credits_remaining: str | None = None
 
-    def _fetch_page(self, body: dict) -> dict:
-        cached = self.cache.get("pdl_search", body)
-        if cached is not None:
-            return cached
+    def _post(self, body: dict) -> dict:
+        """One Person Search request. Returns {data, total, scroll_token}."""
         response = request_with_retries(
             self.session,
             "POST",
@@ -234,13 +232,11 @@ class PDLSource:
             raise QuotaExceeded("PDL: still rate limited after retries; try again later", status)
         else:
             raise ApiError(f"PDL search failed ({status}): {error_message(response)}", status)
-        page = {
+        return {
             "data": [_slim(r) for r in page.get("data") or []],
             "total": page.get("total", 0),
             "scroll_token": page.get("scroll_token"),
         }
-        self.cache.set("pdl_search", body, page)
-        return page
 
     def _track_credits(self, response: requests.Response) -> None:
         spent = response.headers.get("x-call-credits-spent")
@@ -250,9 +246,71 @@ class PDLSource:
         if remaining:
             self.credits_remaining = remaining
 
+    # Every record bought for a school's query is kept, in order, under one
+    # cache entry keyed by the query alone (not the page size). A later run
+    # replays them and only pays for records beyond what it already has,
+    # whatever --max-per-school was before.
+
+    def _load_progress(self, query: dict) -> dict:
+        state = self.cache.get("pdl_progress", query)
+        if state is None:
+            state = self._progress_from_old_cache(query) or {
+                "total": None,
+                "records": [],
+                "scroll_token": None,
+                "done": False,
+            }
+        return state
+
+    def _progress_from_old_cache(self, query: dict) -> dict | None:
+        """Pick up a first page cached by earlier versions, which keyed pages by size."""
+        for size in range(PAGE_SIZE, 1, -1):  # size 1 is the estimate command's probe
+            page = self.cache.get("pdl_search", _request_body(query, size))
+            if page is not None:
+                records = list(page.get("data") or [])
+                total = int(page.get("total") or 0)
+                token = page.get("scroll_token")
+                return {
+                    "total": total,
+                    "records": records,
+                    "scroll_token": token,
+                    "done": not records or not token or len(records) >= total,
+                }
+        return None
+
+    def _fetch_more(self, query: dict, size: int, state: dict) -> dict:
+        offset = len(state["records"])
+        if state["scroll_token"]:
+            body = _request_body(query, size, state["scroll_token"])
+        else:
+            body = _request_body(query, size)
+            if offset:
+                body["from"] = offset
+        try:
+            return self._post(body)
+        except (AuthError, QuotaExceeded):
+            raise
+        except ApiError as exc:
+            if not state["scroll_token"] or exc.status != 400:
+                raise
+            # Scroll tokens expire. Resume by offset rather than re-buying
+            # the records already in the cache.
+            log.warning("PDL scroll token expired; resuming at record %d by offset", offset)
+            body = _request_body(query, size)
+            body["from"] = offset
+            return self._post(body)
+
     def count(self, school: School, banks: Sequence[Bank]) -> int:
-        """Total matches for one school. Costs at most one credit."""
-        page = self._fetch_page(_request_body(build_query(school, banks), size=1))
+        """Total matches for one school. Free if this school was searched before, else at most one credit."""
+        query = build_query(school, banks)
+        state = self._load_progress(query)
+        if state["total"] is not None:
+            return int(state["total"])
+        body = _request_body(query, size=1)
+        page = self.cache.get("pdl_search", body)
+        if page is None:
+            page = self._post(body)
+            self.cache.set("pdl_search", body, page)
         return int(page.get("total") or 0)
 
     def search(
@@ -262,27 +320,47 @@ class PDLSource:
         max_records: int | None = None,
     ) -> Iterator[Person]:
         query = build_query(school, banks)
-        fetched = 0
-        total = None
-        scroll_token = None
-        while True:
-            size = PAGE_SIZE if max_records is None else min(PAGE_SIZE, max_records - fetched)
-            if size <= 0:
-                break
-            page = self._fetch_page(_request_body(query, size, scroll_token))
+        state = self._load_progress(query)
+        cap = max_records if max_records is not None else float("inf")
+        announced = False
+
+        def announce():
+            nonlocal announced
+            if not announced and state["total"] is not None:
+                log.info("PDL: %s -> %d matching profiles", school.name, state["total"])
+                announced = True
+
+        announce()
+        used = 0
+        for record in state["records"]:  # already paid for
+            if used >= cap:
+                return
+            used += 1
+            person = self._parse(record, banks, school)
+            if person:
+                yield person
+
+        while used < cap and not state["done"]:
+            size = int(min(PAGE_SIZE, cap - used))
+            page = self._fetch_more(query, size, state)
             records = page["data"]
-            if total is None:
-                total = int(page.get("total") or 0)
-                log.info("PDL: %s -> %d matching profiles", school.name, total)
+            if state["total"] is None:
+                state["total"] = int(page.get("total") or 0)
+            state["records"].extend(records)
+            state["scroll_token"] = page.get("scroll_token")
+            state["done"] = not records or not state["scroll_token"] or len(state["records"]) >= state["total"]
+            self.cache.set("pdl_progress", query, state)
+            announce()
             for record in records:
-                try:
-                    person = parse_person(record, banks, school_hint=school)
-                except Exception as exc:  # one malformed record must not sink the whole run
-                    log.warning("Skipping PDL record %s that couldn't be read: %r", record.get("id"), exc)
-                    continue
+                used += 1
+                person = self._parse(record, banks, school)
                 if person:
                     yield person
-            fetched += len(records)
-            scroll_token = page.get("scroll_token")
-            if not records or not scroll_token or fetched >= total:
-                break
+
+    @staticmethod
+    def _parse(record: dict, banks: Sequence[Bank], school: School) -> Person | None:
+        try:
+            return parse_person(record, banks, school_hint=school)
+        except Exception as exc:  # one malformed record must not sink the whole run
+            log.warning("Skipping PDL record %s that couldn't be read: %r", record.get("id"), exc)
+            return None

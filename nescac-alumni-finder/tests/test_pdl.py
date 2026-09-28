@@ -185,7 +185,7 @@ def test_cache_keeps_only_fields_the_tool_uses(tmp_path):
     )
     source, _ = make_source([FakeResponse(200, {"data": [record], "total": 1})], cache=cache)
     list(source.search(COLBY, BANKS))
-    stored = cache.get("pdl_search", _request_body(build_query(COLBY, BANKS), PAGE_SIZE))["data"][0]
+    stored = cache.get("pdl_progress", build_query(COLBY, BANKS))["records"][0]
     assert "personal_emails" not in stored and "phone_numbers" not in stored
     assert stored["emails"] == [{"address": "jane.doe@gs.com", "type": "professional"}]
     assert stored["education"][0]["school"]["name"] == "colby college"
@@ -201,3 +201,59 @@ def test_raising_the_cap_later_reuses_pages_already_bought(tmp_path):
     uncapped, session = make_source([rest], cache=cache)
     assert len(list(uncapped.search(COLBY, BANKS))) == 60
     assert len(session.calls) == 1 and session.calls[0]["json"]["scroll_token"] == "t1"
+
+
+def people(n, prefix="p"):
+    return [pdl_record(id=f"{prefix}{i}", linkedin_url=f"linkedin.com/in/{prefix}{i}") for i in range(n)]
+
+
+def test_small_first_run_then_bigger_run_only_pays_for_new_records(tmp_path):
+    cache = Cache(tmp_path / "c.sqlite3", ttl_seconds=3600)
+    source, _ = make_source([FakeResponse(200, {"data": people(10), "total": 264, "scroll_token": "t1"})], cache=cache)
+    assert len(list(source.search(COLBY, BANKS, max_records=10))) == 10
+
+    more = FakeResponse(200, {"data": people(20, "q"), "total": 264, "scroll_token": "t2"})
+    bigger, session = make_source([more], cache=cache)
+    found = list(bigger.search(COLBY, BANKS, max_records=30))
+    assert len(found) == 30
+    assert len(session.calls) == 1
+    body = session.calls[0]["json"]
+    assert body["scroll_token"] == "t1" and body["size"] == 20  # only the 20 new records are bought
+
+
+def test_smaller_cap_later_is_served_entirely_from_cache(tmp_path):
+    cache = Cache(tmp_path / "c.sqlite3", ttl_seconds=3600)
+    source, _ = make_source([FakeResponse(200, {"data": people(10), "total": 264, "scroll_token": "t1"})], cache=cache)
+    list(source.search(COLBY, BANKS, max_records=10))
+    again, session = make_source([], cache=cache)
+    assert len(list(again.search(COLBY, BANKS, max_records=5))) == 5
+    assert session.calls == []
+
+
+def test_expired_scroll_token_resumes_by_offset(tmp_path):
+    cache = Cache(tmp_path / "c.sqlite3", ttl_seconds=3600)
+    source, _ = make_source([FakeResponse(200, {"data": people(10), "total": 30, "scroll_token": "stale"})], cache=cache)
+    list(source.search(COLBY, BANKS, max_records=10))
+
+    expired = FakeResponse(400, {"error": {"message": "Invalid scroll_token"}})
+    resumed = FakeResponse(200, {"data": people(20, "q"), "total": 30, "scroll_token": "t9"})
+    later, session = make_source([expired, resumed], cache=cache)
+    assert len(list(later.search(COLBY, BANKS))) == 30
+    assert session.calls[1]["json"]["from"] == 10 and "scroll_token" not in session.calls[1]["json"]
+
+
+def test_pages_cached_by_the_previous_version_are_reused(tmp_path):
+    cache = Cache(tmp_path / "c.sqlite3", ttl_seconds=3600)
+    old_page = {"data": people(10), "total": 264, "scroll_token": "t1"}
+    cache.set("pdl_search", _request_body(build_query(COLBY, BANKS), 10), old_page)
+    source, session = make_source([], cache=cache)
+    assert len(list(source.search(COLBY, BANKS, max_records=10))) == 10
+    assert session.calls == []
+
+
+def test_count_is_free_after_a_search(tmp_path):
+    cache = Cache(tmp_path / "c.sqlite3", ttl_seconds=3600)
+    source, _ = make_source([FakeResponse(200, {"data": people(10), "total": 264, "scroll_token": "t1"})], cache=cache)
+    list(source.search(COLBY, BANKS, max_records=10))
+    again, session = make_source([], cache=cache)
+    assert again.count(COLBY, BANKS) == 264 and session.calls == []
