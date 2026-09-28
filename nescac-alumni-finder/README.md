@@ -104,7 +104,7 @@ kept, not deleted. The `Last Seen` date shows how recently each was confirmed.
 
 ## 3. Setup
 
-Requires Python 3.10+.
+Requires Python 3.9+ (the Mac's built-in `python3` works; newer is better).
 
 ```bash
 cd nescac-alumni-finder
