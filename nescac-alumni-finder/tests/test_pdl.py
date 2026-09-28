@@ -53,6 +53,39 @@ def test_masked_free_plan_email_is_not_used():
     assert person.location == ""
 
 
+def test_free_plan_record_with_every_contact_field_masked():
+    # Shape seen from PDL's free plan: whole contact fields are `true`, not lists.
+    record = pdl_record(work_email=True, emails=True, personal_emails=True, phone_numbers=True, location_name=True)
+    person = parse_person(record)
+    assert person.full_name == "Jane Doe" and person.bank == "Goldman Sachs"
+    assert person.email == "" and person.email_note == "PDL has one (paid plan shows it)"
+
+
+def test_free_plan_records_survive_the_cache_round_trip(tmp_path):
+    cache = Cache(tmp_path / "c.sqlite3", ttl_seconds=3600)
+    masked = pdl_record(work_email=True, emails=True, personal_emails=True)
+    source, _ = make_source([FakeResponse(200, {"data": [masked], "total": 1})], cache=cache)
+    assert len(list(source.search(COLBY, BANKS))) == 1
+    replay, _ = make_source([], cache=cache)
+    assert [p.full_name for p in replay.search(COLBY, BANKS)] == ["Jane Doe"]
+
+
+def test_one_unreadable_record_is_skipped_not_fatal(monkeypatch):
+    import alumni_finder.sources.pdl as pdl
+
+    real = pdl.parse_person
+
+    def flaky(record, *args, **kwargs):
+        if record["id"] == "bad":
+            raise ValueError("unexpected shape")
+        return real(record, *args, **kwargs)
+
+    monkeypatch.setattr(pdl, "parse_person", flaky)
+    records = [pdl_record(id="bad"), pdl_record(id="good", linkedin_url="linkedin.com/in/good")]
+    source, _ = make_source([FakeResponse(200, {"data": records, "total": 2})])
+    assert [p.pdl_id for p in source.search(COLBY, BANKS)] == ["good"]
+
+
 def test_work_email_from_a_previous_employer_is_ignored():
     person = parse_person(pdl_record(work_email="jane@bain.com", emails=[{"address": "jane.doe@gs.com", "type": "professional"}]))
     assert person.email == "jane.doe@gs.com"

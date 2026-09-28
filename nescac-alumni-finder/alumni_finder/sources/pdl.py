@@ -83,10 +83,15 @@ def _slim(record: dict) -> dict:
             "degrees": e.get("degrees") or [],
             "end_date": e.get("end_date"),
         }
-        for e in record.get("education") or []
+        for e in _list(record.get("education"))
         if isinstance(e, dict)
     ]
     return slim
+
+
+def _list(value) -> list:
+    # Free-plan records can carry `true` where a list of contact entries would be.
+    return value if isinstance(value, list) else []
 
 
 def _text(value) -> str:
@@ -105,9 +110,9 @@ def _education_sort_key(entry: dict) -> tuple:
 def _work_email(record: dict, bank: Bank) -> tuple[str, bool]:
     """Return (email at the bank's domain or '', whether PDL has a masked email)."""
     allowed = set(bank.email_domains) | set(bank.domains)
-    masked = record.get("work_email") is True
+    masked = record.get("work_email") is True or record.get("emails") is True
     candidates = [_text(record.get("work_email"))]
-    for item in record.get("emails") or []:
+    for item in _list(record.get("emails")):
         if isinstance(item, dict):
             masked = masked or item.get("address") is True
             candidates.append(_text(item.get("address")))
@@ -135,7 +140,9 @@ def parse_person(
         return None
 
     matches: list[tuple[School, dict]] = []
-    for entry in record.get("education") or []:
+    for entry in _list(record.get("education")):
+        if not isinstance(entry, dict):
+            continue
         school = match_school_entry(entry.get("school") or {}, tuple(schools))
         if school:
             matches.append((school, entry))
@@ -268,7 +275,11 @@ class PDLSource:
                 total = int(page.get("total") or 0)
                 log.info("PDL: %s -> %d matching profiles", school.name, total)
             for record in records:
-                person = parse_person(record, banks, school_hint=school)
+                try:
+                    person = parse_person(record, banks, school_hint=school)
+                except Exception as exc:  # one malformed record must not sink the whole run
+                    log.warning("Skipping PDL record %s that couldn't be read: %r", record.get("id"), exc)
+                    continue
                 if person:
                     yield person
             fetched += len(records)
