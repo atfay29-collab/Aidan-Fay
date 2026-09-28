@@ -159,3 +159,10 @@ def test_group_column_is_filled_from_titles_including_manual_rows(env):
     assert (rows["Jane Doe"]["Division"], rows["Jane Doe"]["Group"]) == ("Investment Banking", "Healthcare")
     # A group you supply wins; division is still inferred (boutique + banker title).
     assert (rows["Sam Lee"]["Division"], rows["Sam Lee"]["Group"]) == ("Investment Banking", "Restructuring")
+
+
+def test_links_with_custom_out_path_still_writes_the_template(env):
+    assert cli.main(["links", "--banks", "elite boutiques", "--out", str(env / "elsewhere" / "links.csv")]) == 0
+    assert (env / "output" / "manual_alumni_template.csv").exists()
+    banks = {r["bank"] for r in read_csv(env / "elsewhere" / "links.csv")}
+    assert "Evercore" in banks and "Goldman Sachs" not in banks

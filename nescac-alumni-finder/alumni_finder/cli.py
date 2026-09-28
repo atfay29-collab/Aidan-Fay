@@ -14,7 +14,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from .cache import Cache
-from .config import BANKS, BANKS_BY_NAME, SCHOOLS, Settings, resolve_bank, resolve_school, select
+from .config import BANKS, BANKS_BY_NAME, SCHOOLS, Settings, resolve_school, select, select_banks
 from .dedupe import Deduper
 from .enrich import EmailEnricher, HunterClient
 from .groups import classify
@@ -46,7 +46,7 @@ def _split(value: str | None) -> list[str] | None:
 
 def _scope(args) -> tuple[tuple, tuple]:
     schools = select(SCHOOLS, _split(args.schools), resolve_school)
-    banks = select(BANKS, _split(args.banks), lambda text: resolve_bank(text))
+    banks = select_banks(_split(args.banks))
     return schools, banks
 
 
@@ -277,7 +277,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     def scope_args(p):
         p.add_argument("--schools", help="comma-separated subset, e.g. 'Colby,Bates' (default: all 11)")
-        p.add_argument("--banks", help="comma-separated subset, e.g. 'Goldman Sachs,Evercore' (default: all)")
+        p.add_argument(
+            "--banks",
+            help="comma-separated subset, e.g. 'Goldman Sachs,Evercore', or 'elite boutiques' / 'bulge bracket' (default: all)",
+        )
 
     est = sub.add_parser("estimate", help="count PDL matches per school before spending credits")
     scope_args(est)

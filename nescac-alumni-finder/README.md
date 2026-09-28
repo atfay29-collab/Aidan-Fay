@@ -91,11 +91,11 @@ span tabs. A single table with both dimensions as columns groups either way
 without duplicating data. The sort order still reads "school, then bank within
 school" top to bottom.
 
-**Visible columns:** `Full Name, Bank, Group, Title, Email`. Rows are sorted
-by bank, then group, then name.
+**Visible columns:** `School, Full Name, Bank, Group, Title, Email`. Rows are
+sorted by school, then bank, then group, then name.
 
 Everything else is kept in **hidden** columns:
-- School, Bank Type, Division, Email Source, Email Confidence, LinkedIn URL,
+- Bank Type, Division, Email Source, Email Confidence, LinkedIn URL,
   Location, Grad Year, Also Attended, Found Via, Last Seen, Status, Notes,
   Source ID.
 
@@ -227,6 +227,7 @@ python -m alumni_finder run
 
 # Useful flags
 python -m alumni_finder run --banks "Goldman Sachs,Evercore,Centerview"
+python -m alumni_finder run --banks "elite boutiques"            # or "bulge bracket"
 python -m alumni_finder run --max-per-school 0            # no cap (watch your credits)
 python -m alumni_finder run --title-keywords "investment banking,M&A,capital markets,restructuring,leveraged finance"
 python -m alumni_finder run --guess-emails                 # fill gaps with labeled pattern guesses

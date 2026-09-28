@@ -101,5 +101,6 @@ def load_manual_csv(path: str | Path) -> tuple[list[Person], list[str]]:
 
 
 def write_template(path: str | Path) -> None:
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as handle:
         csv.writer(handle).writerow(TEMPLATE_HEADERS)

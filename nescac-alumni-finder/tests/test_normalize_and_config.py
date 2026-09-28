@@ -1,6 +1,6 @@
 import pytest
 
-from alumni_finder.config import BANKS, SCHOOLS, match_school_entry, resolve_bank, resolve_school, select
+from alumni_finder.config import BANKS, SCHOOLS, match_school_entry, resolve_bank, resolve_school, select, select_banks
 from alumni_finder.normalize import name_key, normalize_domain, normalize_linkedin_url, split_name
 
 
@@ -80,3 +80,16 @@ def test_select_keeps_config_order_and_rejects_unknown_names():
     assert [s.name for s in chosen] == ["Amherst", "Williams"]
     with pytest.raises(ValueError):
         select(SCHOOLS, ["Harvard"], resolve_school)
+
+
+def test_bank_category_shortcuts():
+    boutiques = [b.name for b in select_banks(["elite boutiques"])]
+    assert boutiques == [
+        "Evercore", "Lazard", "Centerview Partners", "Moelis & Company", "PJT Partners",
+        "Perella Weinberg Partners", "Houlihan Lokey", "Qatalyst Partners",
+    ]
+    assert len(select_banks(["Bulge Bracket"])) == 7
+    assert [b.name for b in select_banks(["Evercore", "gs"])] == ["Goldman Sachs", "Evercore"]
+    assert select_banks(None) == BANKS
+    with pytest.raises(ValueError):
+        select_banks(["Jefferies"])

@@ -43,7 +43,7 @@ INTERNAL_COLUMNS = [SOURCE_ID]
 # the tool uses them on re-runs (LinkedIn URL and Source ID to spot
 # duplicates, Email Source so a typed-in email is never replaced), and you
 # can unhide them in Sheets at any time.
-VISIBLE_COLUMNS = [NAME, BANK, GROUP, TITLE, EMAIL]
+VISIBLE_COLUMNS = [SCHOOL, NAME, BANK, GROUP, TITLE, EMAIL]
 COLUMNS = VISIBLE_COLUMNS + [
     c for c in TOOL_COLUMNS + USER_COLUMNS + INTERNAL_COLUMNS if c not in VISIBLE_COLUMNS
 ]

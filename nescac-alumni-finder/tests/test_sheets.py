@@ -56,9 +56,9 @@ def test_summary_counts_school_by_bank_with_live_formulas():
     header, amherst = summary.values[0], summary.values[1]
     assert header[1] == "Goldman Sachs" and header[-2:] == ["Total", "With Email"]
     assert amherst[0] == "Amherst"
-    assert amherst[1] == "=COUNTIFS('Alumni'!$F:$F,$A2,'Alumni'!$B:$B,B$1)"  # School is column F
+    assert amherst[1] == "=COUNTIFS('Alumni'!$A:$A,$A2,'Alumni'!$C:$C,B$1)"  # School A, Bank C
     assert amherst[-2] == "=SUM(B2:P2)"  # 15 bank columns: B..P
-    assert amherst[-1] == "=COUNTIFS('Alumni'!$F:$F,$A2,'Alumni'!$E:$E,\"<>\")"  # Email is column E
+    assert amherst[-1] == "=COUNTIFS('Alumni'!$A:$A,$A2,'Alumni'!$F:$F,\"<>\")"  # Email is column F
     assert summary.values[len(SCHOOLS) + 1][1] == "=SUM(B2:B12)"
 
 
@@ -127,14 +127,14 @@ def test_unreachable_spreadsheet_gives_a_setup_hint(monkeypatch):
         sheets.open_sheet(SimpleNamespace(google_auth_mode="oauth", spreadsheet_id="abc"))
 
 
-def test_only_name_bank_group_title_email_are_visible():
+def test_only_school_name_bank_group_title_email_are_visible():
     sheet = FakeSpreadsheet()
     write(sheet, [jane(group="Healthcare", title="Investment Banking Analyst")], extras=["Coffee Chat"])
     header = sheet.tabs[MASTER_TAB].values[0]
-    assert header[:5] == ["Full Name", "Bank", "Group", "Title", "Email"]
+    assert header[:6] == ["School", "Full Name", "Bank", "Group", "Title", "Email"]
     visibility = [
         r["updateDimensionProperties"] for r in sheet.batches[0]["requests"] if "updateDimensionProperties" in r
     ]
     assert visibility[0]["properties"] == {"hiddenByUser": False}  # unhide all first
     hidden = {header[v["range"]["startIndex"]] for v in visibility[1:] if v["properties"]["hiddenByUser"]}
-    assert hidden == set(header) - {"Full Name", "Bank", "Group", "Title", "Email", "Coffee Chat"}
+    assert hidden == set(header) - {"School", "Full Name", "Bank", "Group", "Title", "Email", "Coffee Chat"}

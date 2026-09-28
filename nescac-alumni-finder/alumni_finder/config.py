@@ -273,6 +273,35 @@ def resolve_bank(
     return None
 
 
+# Category shortcuts accepted by --banks, e.g. --banks "elite boutiques".
+BANK_CATEGORIES = {
+    "elite boutique": ELITE_BOUTIQUE,
+    "elite boutiques": ELITE_BOUTIQUE,
+    "boutiques": ELITE_BOUTIQUE,
+    "eb": ELITE_BOUTIQUE,
+    "bulge bracket": BULGE_BRACKET,
+    "bulge brackets": BULGE_BRACKET,
+    "bb": BULGE_BRACKET,
+}
+
+
+def select_banks(wanted: list[str] | None, banks: tuple[Bank, ...] = BANKS) -> tuple[Bank, ...]:
+    """Like select(), but also accepts category names ("elite boutiques", "bulge bracket")."""
+    if not wanted:
+        return banks
+    chosen: list[Bank] = []
+    for text in wanted:
+        category = BANK_CATEGORIES.get(norm_text(text))
+        if category:
+            chosen += [b for b in banks if b.category == category]
+            continue
+        bank = resolve_bank(text, banks=banks)
+        if bank is None:
+            raise ValueError(f"Unknown bank: {text!r}")
+        chosen.append(bank)
+    return tuple(b for b in banks if b in chosen)
+
+
 def select(items: tuple, wanted: list[str] | None, resolver) -> tuple:
     """Filter SCHOOLS/BANKS by user-supplied names (CLI --schools/--banks)."""
     if not wanted:
