@@ -1,0 +1,13 @@
+# Secrets
+.env
+credentials/
+
+# Contains personal data and paid API responses
+.cache/
+output/
+
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
