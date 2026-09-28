@@ -66,7 +66,9 @@ class HunterClient:
             self.session,
             "GET",
             f"{HUNTER_BASE}/{endpoint}",
-            params={**params, "api_key": self.api_key},
+            params=params,
+            # Header rather than query string, so the key never appears in URLs or error messages.
+            headers={"X-API-KEY": self.api_key},
             limiter=self.limiter,
             max_retries=self.max_retries,
             provider="Hunter",

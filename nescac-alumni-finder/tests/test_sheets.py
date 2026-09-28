@@ -84,3 +84,44 @@ def test_links_tab_lists_every_school_bank_keyword():
     keywords = sum(len(b.linkedin_keywords) for b in BANKS)
     assert len(links) == 1 + len(SCHOOLS) * keywords
     assert links[1][3].startswith("https://www.linkedin.com/school/amherst-college/people/?keywords=")
+
+
+def test_expired_oauth_sign_in_is_cleared_and_retried(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from google.auth.exceptions import RefreshError
+
+    from alumni_finder import sheets
+
+    token = tmp_path / "authorized_user.json"
+    token.write_text("{}")
+    settings = SimpleNamespace(google_auth_mode="oauth", google_oauth_token_file=token, spreadsheet_id="abc")
+    fake = FakeSpreadsheet()
+    attempts = []
+
+    def open_spreadsheet(client, settings):
+        attempts.append(token.exists())
+        if len(attempts) == 1:
+            raise RefreshError("invalid_grant: Token has been expired or revoked.")
+        return fake
+
+    monkeypatch.setattr(sheets, "connect", lambda settings: object())
+    monkeypatch.setattr(sheets, "open_spreadsheet", open_spreadsheet)
+    assert sheets.open_sheet(settings) is fake
+    assert attempts == [True, False]  # second attempt ran after the stale token was deleted
+
+
+def test_unreachable_spreadsheet_gives_a_setup_hint(monkeypatch):
+    from types import SimpleNamespace
+
+    import pytest
+
+    from alumni_finder import sheets
+
+    def open_spreadsheet(client, settings):
+        raise PermissionError
+
+    monkeypatch.setattr(sheets, "connect", lambda settings: object())
+    monkeypatch.setattr(sheets, "open_spreadsheet", open_spreadsheet)
+    with pytest.raises(sheets.SheetsConfigError, match="SPREADSHEET_ID"):
+        sheets.open_sheet(SimpleNamespace(google_auth_mode="oauth", spreadsheet_id="abc"))

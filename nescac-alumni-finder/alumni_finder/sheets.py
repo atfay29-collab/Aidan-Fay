@@ -70,6 +70,36 @@ def connect(settings) -> gspread.Client:
     raise SheetsConfigError(f"GOOGLE_AUTH_MODE must be 'service_account' or 'oauth', not {mode!r}")
 
 
+def open_sheet(settings):
+    """Connect and open the spreadsheet.
+
+    Google expires saved OAuth sign-ins after 7 days while your Cloud project is
+    in "Testing" mode, so an expired or revoked sign-in is cleared and the
+    browser sign-in runs once more instead of failing the run.
+    """
+    from google.auth.exceptions import RefreshError
+
+    try:
+        return _connect_and_open(settings)
+    except RefreshError:
+        if settings.google_auth_mode != "oauth":
+            raise
+        log.warning("Your saved Google sign-in expired or was revoked; opening the browser to sign in again.")
+        Path(settings.google_oauth_token_file).unlink(missing_ok=True)
+        return _connect_and_open(settings)
+
+
+def _connect_and_open(settings):
+    client = connect(settings)
+    try:
+        return open_spreadsheet(client, settings)
+    except (gspread.SpreadsheetNotFound, PermissionError) as exc:
+        raise SheetsConfigError(
+            f"Can't open spreadsheet {settings.spreadsheet_id!r}. Check SPREADSHEET_ID in .env and that "
+            "the Google account you signed in with can edit that sheet."
+        ) from exc
+
+
 def open_spreadsheet(client, settings):
     if settings.spreadsheet_id:
         return client.open_by_key(settings.spreadsheet_id)
@@ -81,7 +111,11 @@ def open_spreadsheet(client, settings):
             "service account's client_email, and put the ID from its URL in .env."
         )
     spreadsheet = client.create(settings.spreadsheet_title)
-    log.info("Created spreadsheet %s. Add SPREADSHEET_ID=%s to .env to reuse it.", spreadsheet.url, spreadsheet.id)
+    log.warning(
+        "Created spreadsheet %s. Add SPREADSHEET_ID=%s to .env, or the next run will create another one.",
+        spreadsheet.url,
+        spreadsheet.id,
+    )
     return spreadsheet
 
 

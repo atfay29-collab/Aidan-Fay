@@ -43,7 +43,8 @@ def test_find_email_sends_name_and_domain():
     client, session = hunter([found()])
     result = client.find_email("Jane", "Doe", "gs.com")
     assert result.email == "jane.doe@gs.com" and result.score == 94
-    assert session.calls[0]["params"] == {"domain": "gs.com", "first_name": "Jane", "last_name": "Doe", "api_key": "key"}
+    assert session.calls[0]["params"] == {"domain": "gs.com", "first_name": "Jane", "last_name": "Doe"}
+    assert session.calls[0]["headers"] == {"X-API-KEY": "key"}
 
 
 def test_hunter_result_is_cached(tmp_path):

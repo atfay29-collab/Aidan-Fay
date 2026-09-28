@@ -144,10 +144,10 @@ def cmd_run(args, settings: Settings) -> int:
     existing: list[Person] = []
     extra_headers: list[str] = []
     if not args.no_sheet:
-        from .sheets import SheetWriter, SheetsConfigError, connect, open_spreadsheet
+        from .sheets import SheetWriter, SheetsConfigError, open_sheet
 
         try:
-            spreadsheet = open_spreadsheet(connect(settings), settings)
+            spreadsheet = open_sheet(settings)
             writer = SheetWriter(spreadsheet)
             existing, extra_headers = writer.read_existing()
         except SheetsConfigError as exc:

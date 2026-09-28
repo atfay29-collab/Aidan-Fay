@@ -113,55 +113,81 @@ pip install -r requirements.txt
 cp .env.example .env        # then fill it in as below
 ```
 
-### 3a. People Data Labs
+### 3a. People Data Labs key
 
-1. Sign up at <https://dashboard.peopledatalabs.com/> (the free plan works
-   without a card).
-2. Copy your API key into `.env` as `PDL_API_KEY`.
-3. **Plan note:** on the free plan, names, titles, employers and LinkedIn URLs
-   come back, but emails are masked as `true`/`false`. The sheet then shows
-   "PDL has one (paid plan shows it)", and Hunter fills in emails instead. A
-   paid plan unmasks work emails.
+1. Sign up at <https://dashboard.peopledatalabs.com/>. The free plan needs no
+   card.
+2. In the dashboard, open **API Keys** (or click **Manage Keys** on the home
+   page) and click **Copy**.
+3. Paste it into `.env`: `PDL_API_KEY=...`
 
-### 3b. Hunter.io
+**Plan note:** on the free plan, names, titles, employers and LinkedIn URLs come
+back, but emails are masked as `true`/`false`. The sheet then shows "PDL has one
+(paid plan shows it)", and Hunter fills in emails instead. A paid plan unmasks
+work emails.
 
-1. Sign up at <https://hunter.io/> → *API* → copy the key into `.env` as
-   `HUNTER_API_KEY`.
-2. Lookups count against your monthly Hunter quota. Cap a run with
-   `--max-hunter-lookups N`. Every result, including "not found", is cached
-   for 30 days, so re-runs don't repeat lookups.
+### 3b. Hunter.io key
 
-### 3c. Google Sheets: pick one
+1. Sign up at <https://hunter.io/>. Email or "Sign up with Google" both work.
+2. Open <https://hunter.io/api-keys> and copy the key.
+3. Paste it into `.env`: `HUNTER_API_KEY=...`
 
-**Which one do you have set up?** Both are supported. Set `GOOGLE_AUTH_MODE` in `.env`.
+Lookups count against your monthly Hunter quota. Cap a run with
+`--max-hunter-lookups N`. Every result, including "not found", is cached for
+30 days, so re-runs don't repeat lookups. The key is sent in a request header,
+never in the URL.
 
-**Option A: service account (recommended for a script)**
+### 3c. Google Sheets: OAuth (the default)
 
-1. In <https://console.cloud.google.com/>, create or select a project. Enable
-   the **Google Sheets API** (and the **Google Drive API**).
-2. *IAM & Admin → Service Accounts → Create*. Open it → *Keys → Add key → JSON*.
-   Save the file as `credentials/service_account.json`.
-3. Create a blank Google Sheet yourself. Click **Share** and add the service
-   account's `client_email` (from the JSON file) as **Editor**. Service accounts
-   have no Drive storage of their own, so they can't create the sheet for you.
-4. Put the sheet's ID (the long string in
-   `docs.google.com/spreadsheets/d/<ID>/edit`) in `.env` as `SPREADSHEET_ID`.
-5. `GOOGLE_AUTH_MODE=service_account`
+The tool signs in as **your own Google account** and writes to a sheet in
+your Drive. Run it on your own computer, because the first run opens a browser.
 
-**Option B: OAuth as your own Google account**
+1. Go to <https://console.cloud.google.com/>, sign in, and create a project
+   (e.g. "alumni-finder"). If the project picker is greyed out on your
+   `@colby.edu` account, use a personal Gmail account instead.
+2. **Enable the APIs.** Go to *APIs & Services → Library*. Enable **Google
+   Sheets API**, then **Google Drive API**.
+3. **Set up the consent screen.** Go to *APIs & Services → OAuth consent
+   screen*; newer consoles call it *Google Auth Platform*.
+   - Choose **External** and fill in an app name and your email.
+   - Under **Audience → Test users**, add the Google account you'll sign in
+     with.
+4. **Create the client.**
+   - Go to *Clients* (or *Credentials → Create credentials*) → *OAuth client
+     ID*, and choose application type **Desktop app**.
+   - **Download the JSON right away.** Newer consoles only offer it at
+     creation.
+   - Save it as `nescac-alumni-finder/credentials/oauth_client.json`.
+5. In `.env`, set `GOOGLE_AUTH_MODE=oauth`. Leave `SPREADSHEET_ID` blank for
+   now.
+6. **First run.**
+   - Run `python -m alumni_finder run --schools Colby`. A browser opens.
+   - Google will warn **"Google hasn't verified this app"**. That's expected,
+     since it's your own app: click *Advanced → Go to (app name)* → *Allow*.
+   - The tool creates a sheet named "NESCAC Alumni in Investment Banking" and
+     prints its ID.
+   - **Paste that ID into `.env` as `SPREADSHEET_ID`**, or every run will create
+     a new sheet. To use a sheet you already have instead, put its ID (the long
+     string in `docs.google.com/spreadsheets/d/<ID>/edit`) there before the
+     first run.
 
-1. In the Cloud Console, enable the Google Sheets API and Google Drive API.
-   Configure the OAuth consent screen (External; add yourself as a test user).
-2. *Credentials → Create credentials → OAuth client ID → Desktop app*.
-   Download the JSON as `credentials/oauth_client.json`.
-3. `GOOGLE_AUTH_MODE=oauth`. On the first run a browser opens for consent, and
-   the token is saved to `credentials/authorized_user.json`.
-4. `SPREADSHEET_ID` is optional here. If it's blank, a new sheet is created in
-   your Drive, and its ID is printed so you can add it to `.env`.
+After you sign in, the login is saved to `credentials/authorized_user.json`.
+Google expires it after 7 days while the project is in "Testing" mode. When
+that happens, the tool deletes the stale login and opens the browser to sign in
+again.
 
-> **Colby Google Workspace note:** if your `@colby.edu` account blocks
-> third-party OAuth apps, use a personal Gmail account for Option B, or use
-> Option A.
+<details>
+<summary>Alternative: service account (unattended runs)</summary>
+
+1. In the same Cloud project: *IAM & Admin → Service Accounts → Create*. Open
+   it → *Keys → Add key → JSON*. Save the key as
+   `credentials/service_account.json`.
+2. Create a blank Google Sheet yourself. **Share** it with the service
+   account's `client_email` as **Editor**. Service accounts have no Drive
+   storage, so they can't create the sheet.
+3. In `.env`, set `GOOGLE_AUTH_MODE=service_account` and `SPREADSHEET_ID=<the sheet's ID>`.
+
+</details>
 
 ---
 

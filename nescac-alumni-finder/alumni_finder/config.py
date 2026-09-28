@@ -316,7 +316,7 @@ class Settings:
         return cls(
             pdl_api_key=env("PDL_API_KEY", "").strip(),
             hunter_api_key=env("HUNTER_API_KEY", "").strip(),
-            google_auth_mode=env("GOOGLE_AUTH_MODE", "service_account").strip().lower(),
+            google_auth_mode=env("GOOGLE_AUTH_MODE", "oauth").strip().lower(),
             google_service_account_file=Path(env("GOOGLE_SERVICE_ACCOUNT_FILE", "credentials/service_account.json")),
             google_oauth_client_file=Path(env("GOOGLE_OAUTH_CLIENT_FILE", "credentials/oauth_client.json")),
             google_oauth_token_file=Path(env("GOOGLE_OAUTH_TOKEN_FILE", "credentials/authorized_user.json")),
