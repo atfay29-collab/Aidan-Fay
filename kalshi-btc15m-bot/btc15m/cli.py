@@ -80,6 +80,39 @@ def cmd_kalshi(a) -> None:
                   f"p={t.decision.p_win:.2f} -> {t.result:3s} {t.pnl_cents / 100:+.2f}")
 
 
+def cmd_research(a) -> None:
+    from .history import load_history
+    from .learn import build_rows, walk_forward
+
+    start, end = _range(a.days)
+    markets, quotes = load_history(Kalshi(), start, end, DATA / "kalshi_candles")
+    if not markets:
+        sys.exit("no settled KXBTC15M markets returned for that range")
+    lo = min(m.open_ts for m in markets) - 3 * 3600
+    hi = max(m.close_ts for m in markets) + 60
+    candles = _btc(a, lo // 60 * 60, hi)
+    rows = build_rows(markets, quotes, candles, a.vol_mult)
+    r = walk_forward(rows, _params(a), a.train_frac, a.l2)
+    print(f"\ntrain {r.train_markets} markets, test {r.test_markets} markets ({r.test_rows} scored minutes)")
+    print(f"\n                 Brier    log loss   (test set only; lower is better)")
+    print(f"  Kalshi price   {r.market_brier:.4f}   {r.market_logloss:.4f}")
+    print(f"  model          {r.model_brier:.4f}   {r.model_logloss:.4f}")
+    verdict = "BEATS" if r.model_logloss < r.market_logloss else "does NOT beat"
+    print(f"\nmodel {verdict} the Kalshi price on unseen markets.")
+    print("\nweights (logit_mid near 1 and the rest near 0 means the market already knows it):")
+    for k, v in r.weights.items():
+        print(f"  {k:14s} {v:+.4f}")
+    print(f"\ntest trades {r.trades}  win rate {r.win_rate:.3f}  "
+          f"P&L ${r.pnl_dollars:+.2f}  ROI {r.roi:+.4f}")
+
+
+def cmd_record(a) -> None:
+    from .record import run
+
+    print("recording to data/recordings/ - leave running; Ctrl-C to stop")
+    run(Kalshi(), DATA / "recordings", poll=a.poll)
+
+
 def cmd_live(a) -> None:
     from .live import run
 
@@ -124,6 +157,19 @@ def main(argv: list[str] | None = None) -> None:
     sp.add_argument("--trades", action="store_true", help="print every trade")
     common(sp)
     sp.set_defaults(func=cmd_kalshi)
+
+    sp = sub.add_parser("research", help="learn where the Kalshi price is wrong (walk-forward)")
+    sp.add_argument("--days", type=float, default=30)
+    sp.add_argument("--csv")
+    sp.add_argument("--source", choices=["coinbase", "massive"], default="massive")
+    sp.add_argument("--train-frac", type=float, default=0.7)
+    sp.add_argument("--l2", type=float, default=10.0, help="higher = stay closer to the market")
+    common(sp)
+    sp.set_defaults(func=cmd_research, vol_mult=0.9)
+
+    sp = sub.add_parser("record", help="log Kalshi order book + BTC spot every few seconds")
+    sp.add_argument("--poll", type=float, default=2.0)
+    sp.set_defaults(func=cmd_record)
 
     sp = sub.add_parser("live", help="run the bot (dry run unless --trade)")
     sp.add_argument("--trade", action="store_true", help="send real orders")

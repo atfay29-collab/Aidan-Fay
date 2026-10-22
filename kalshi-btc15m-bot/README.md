@@ -108,6 +108,42 @@ fees, and settles on Kalshi's real result. It reports:
 Don't tune many parameters on one week and then trust the result. Tune on one
 period, then check on a later one.
 
+## Research: learning where the Kalshi price is wrong
+
+The plain volatility model lost to the Kalshi price (Brier 0.180 vs 0.161 over
+7 days). `research` takes the market-relative approach instead: it starts from
+the Kalshi mid-price and fits a logistic regression on features the market
+might under-react to:
+
+- recent BTC returns over 1, 3, 5 and 15 minutes
+- the volatility regime
+- distance to the strike in sigmas
+- spread, time left, time of day
+
+Every market gets equal weight, and the fit is pulled toward "trust the
+market", so with no real signal it just copies the price. It trains on the
+earliest 70% of markets and reports scores and trades on the remaining 30%
+only.
+
+```bash
+python -m btc15m research --days 30
+```
+
+The model has found something only if it beats the Kalshi price on log loss
+on unseen markets, and it has to hold up again on a different date range. On
+synthetic data the tests confirm it finds a planted mispricing and finds
+nothing in a fair market.
+
+### Recording order books
+
+Kalshi only publishes 1-minute quote history. To get second-level order books
+(depth, imbalance, how fast quotes catch up to spot), you have to record them
+from now on:
+
+```bash
+python -m btc15m record          # leave running; writes data/recordings/YYYY-MM-DD.csv
+```
+
 ## Live bot
 
 ```bash
