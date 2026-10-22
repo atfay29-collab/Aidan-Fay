@@ -70,6 +70,24 @@ The calibration table it prints shows whether "60%" really means 60%. If real
 BTC data comes out over-confident, raise `--vol-mult`, say to 1.1–1.3, because
 BTC has fat tails.
 
+### Using Massive for BTC data
+
+[Massive](https://massive.com) sells market data for stocks, options, indices,
+futures, forex and crypto. Add `--source massive` to either backtest to pull
+BTC minute bars (`X:BTCUSD`) from its crypto
+[Custom Bars](https://massive.com/docs/rest/crypto/aggregates/custom-bars.md)
+endpoint instead of Coinbase:
+
+```bash
+# sign up: https://massive.com/dashboard/signup   key: https://massive.com/dashboard/keys
+export MASSIVE_API_KEY=...        # keep it out of code and out of git
+python -m btc15m backtest-proxy --source massive --days 30
+python -m btc15m backtest-kalshi --source massive --days 7
+```
+
+A 401/403 means the key is wrong or your plan doesn't include crypto minute
+bars.
+
 ## Backtest 2: does it make money against real Kalshi prices?
 
 ```bash

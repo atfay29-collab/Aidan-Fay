@@ -22,11 +22,15 @@ def _params(a) -> Params:
 def _btc(a, start: int, end: int) -> list[data.Candle]:
     if getattr(a, "synthetic", False):
         return data.synthetic(days=a.days)
-    path = Path(a.csv) if a.csv else DATA / f"btc_1m_{start}_{end}.csv"
+    path = Path(a.csv) if a.csv else DATA / f"btc_1m_{a.source}_{start}_{end}.csv"
     if path.exists():
         return data.load_csv(path)
-    print(f"downloading Coinbase BTC-USD 1m candles -> {path}")
-    candles = data.fetch_coinbase(start, end)
+    print(f"downloading {a.source} BTC-USD 1m candles -> {path}")
+    if a.source == "massive":
+        from .massive import fetch_massive
+        candles = fetch_massive(start, end)
+    else:
+        candles = data.fetch_coinbase(start, end)
     data.save_csv(candles, path)
     return candles
 
@@ -107,6 +111,8 @@ def main(argv: list[str] | None = None) -> None:
     sp = sub.add_parser("backtest-proxy", help="score predictions on BTC candles only")
     sp.add_argument("--days", type=float, default=30)
     sp.add_argument("--csv")
+    sp.add_argument("--source", choices=["coinbase", "massive"], default="coinbase",
+                    help="where to download BTC 1m candles (massive needs MASSIVE_API_KEY)")
     sp.add_argument("--synthetic", action="store_true", help="offline random-walk data")
     common(sp, strategy=False)
     sp.set_defaults(func=cmd_proxy)
@@ -114,6 +120,7 @@ def main(argv: list[str] | None = None) -> None:
     sp = sub.add_parser("backtest-kalshi", help="trade real settled Kalshi markets")
     sp.add_argument("--days", type=float, default=7)
     sp.add_argument("--csv")
+    sp.add_argument("--source", choices=["coinbase", "massive"], default="coinbase")
     sp.add_argument("--trades", action="store_true", help="print every trade")
     common(sp)
     sp.set_defaults(func=cmd_kalshi)
