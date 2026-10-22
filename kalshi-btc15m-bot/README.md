@@ -144,6 +144,37 @@ from now on:
 python -m btc15m record          # leave running; writes data/recordings/YYYY-MM-DD.csv
 ```
 
+## Weather: daily high-temperature markets
+
+Kalshi's daily-high markets (`KXHIGHNY`, `KXHIGHCHI`, `KXHIGHMIA`, `KXHIGHAUS`,
+…) are brackets on one city's official high for one day. They settle on the
+NWS Daily Climate Report for a single station. `weather-backtest` prices every
+bracket from a weather forecast and trades against Kalshi's quote at a fixed
+local hour on that day.
+
+- **Forecast:** the max of the hourly forecast issued about 24 hours earlier
+  ([Open-Meteo Previous Runs API](https://open-meteo.com/en/docs/previous-runs-api),
+  free, no key). It covers the climate-report day, which runs midnight to
+  midnight local *standard* time.
+- **Calibration:** the high is modeled as Normal(forecast + bias, sd). Bias and
+  sd come from the city's last 45 settled days only.
+- **No look-ahead:** every forecast hour was issued before the decision time,
+  and calibration uses only days that already settled.
+
+```bash
+python -m btc15m weather-backtest --days 120 --trades
+python -m btc15m weather-backtest --cities NY,CHI --decision-hour 8 --model ecmwf_ifs025
+```
+
+Check the output for:
+
+- `rule_mismatch` should be `0/N`. If not, the bracket rules are being read
+  wrong.
+- `Kalshi rules` shows the official settlement wording. Make sure the station
+  matches the one assumed in `btc15m/weather.py`.
+- `model_brier` vs `market_brier`: the model has an edge only if its score is
+  lower, consistently across cities and date ranges.
+
 ## Live bot
 
 ```bash

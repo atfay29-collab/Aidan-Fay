@@ -114,9 +114,10 @@ class Kalshi:
         return (100 - nb if nb else None), (100 - yb if yb else None)
 
     def candlesticks(self, ticker: str, start_ts: int, end_ts: int,
-                     series: str = SERIES) -> list[dict]:
+                     series: str = SERIES, period: int = 1) -> list[dict]:
+        """period: candle length in minutes (Kalshi allows 1, 60, 1440)."""
         page = self._req("GET", f"/series/{series}/markets/{ticker}/candlesticks",
-                         params={"start_ts": start_ts, "end_ts": end_ts, "period_interval": 1})
+                         params={"start_ts": start_ts, "end_ts": end_ts, "period_interval": period})
         return page.get("candlesticks", [])
 
     # -- trading ------------------------------------------------------------

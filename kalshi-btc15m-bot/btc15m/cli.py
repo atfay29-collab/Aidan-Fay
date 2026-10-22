@@ -113,6 +113,48 @@ def cmd_record(a) -> None:
     run(Kalshi(), DATA / "recordings", poll=a.poll)
 
 
+def cmd_weather(a) -> None:
+    from datetime import datetime, timezone
+
+    from .weather import CITIES, backtest_city, fetch_forecast_highs, load_city
+
+    end = int(time.time())
+    start = end - int(a.days * 86400)
+    client = Kalshi()
+    params = _params(a)
+    totals = {"trades": 0, "pnl": 0.0, "model": 0.0, "market": 0.0, "n": 0}
+    for name in a.cities.split(","):
+        city = CITIES[name.strip().upper()]
+        brackets, quotes, rules = load_city(client, city, start, end, a.decision_hour,
+                                            DATA / "kalshi_weather")
+        if not brackets:
+            print(f"  no settled markets for {city.series}; skipping\n")
+            continue
+        days = sorted({b.day for b in brackets})
+        forecasts = fetch_forecast_highs(city, days[0], days[-1], a.model)
+        r = backtest_city(name, brackets, quotes, forecasts, params, a.window)
+        s = r.summary(params.contracts)
+        print(f"\n== {name}  {city.series}  assumed station: {city.station}")
+        if rules:
+            print(f"   Kalshi rules: {rules[:220]}")
+        for k, v in s.items():
+            print(f"   {k:16s} {v:.4f}" if isinstance(v, float) else f"   {k:16s} {v}")
+        if a.trades:
+            for t in r.trades:
+                print(f"     {t.day} {t.label:>8s} {t.decision.side:3s} @{t.decision.price:2d}c "
+                      f"p={t.decision.p_win:.2f} -> {t.result:3s} {t.pnl_cents / 100:+.2f}")
+        totals["trades"] += s["trades"]
+        totals["pnl"] += s["pnl_dollars"]
+        totals["model"] += r.model_brier
+        totals["market"] += r.market_brier
+        totals["n"] += r.scored
+    n = max(totals["n"], 1)
+    print(f"\nALL CITIES  trades {totals['trades']}  P&L ${totals['pnl']:+.2f}  "
+          f"model Brier {totals['model'] / n:.4f}  market Brier {totals['market'] / n:.4f}")
+    verdict = "BEATS" if totals["model"] < totals["market"] else "does NOT beat"
+    print(f"model {verdict} the Kalshi price at {a.decision_hour}:00 local.")
+
+
 def cmd_live(a) -> None:
     from .live import run
 
@@ -166,6 +208,16 @@ def main(argv: list[str] | None = None) -> None:
     sp.add_argument("--l2", type=float, default=10.0, help="higher = stay closer to the market")
     common(sp)
     sp.set_defaults(func=cmd_research, vol_mult=0.9)
+
+    sp = sub.add_parser("weather-backtest", help="daily high-temperature markets vs forecasts")
+    sp.add_argument("--cities", default="NY,CHI,MIA,AUS", help="comma list: NY,CHI,MIA,AUS,DEN,LAX,PHIL")
+    sp.add_argument("--days", type=float, default=120)
+    sp.add_argument("--decision-hour", type=int, default=10, help="local hour on the day to trade")
+    sp.add_argument("--window", type=int, default=45, help="days of forecast errors to calibrate on")
+    sp.add_argument("--model", help="Open-Meteo model, e.g. gfs_seamless, ecmwf_ifs025")
+    sp.add_argument("--trades", action="store_true")
+    common(sp)
+    sp.set_defaults(func=cmd_weather, min_price=5, max_price=95)
 
     sp = sub.add_parser("record", help="log Kalshi order book + BTC spot every few seconds")
     sp.add_argument("--poll", type=float, default=2.0)
